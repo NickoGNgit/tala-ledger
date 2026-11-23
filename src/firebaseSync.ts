@@ -96,6 +96,7 @@ const ATT_REF_PREFIX = '__attRef:';
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
+const databaseId = (firebaseConfig as {firestoreDatabaseId?: string}).firestoreDatabaseId?.trim() || undefined;
 let db: Firestore;
 try {
   db = initializeFirestore(
@@ -105,10 +106,10 @@ try {
         tabManager: persistentMultipleTabManager(),
       }),
     },
-    firebaseConfig.firestoreDatabaseId
+    databaseId
   );
 } catch {
-  db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+  db = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
 }
 
 const googleProvider = new GoogleAuthProvider();

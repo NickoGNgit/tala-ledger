@@ -9348,16 +9348,20 @@
 
         /**
          * Savings Math:
-         * - Total Savings: Sum of all incoming transactions.
+         * - Total Savings: Net balance of the account holder only
+         *   (account owner's incoming minus account owner's outgoing).
          * - Total Outgoing: Sum of all outgoing transactions.
-         * - Actual Balance: Total Savings minus Total Outgoing.
+         * - Actual Balance: All incoming transactions minus Total Outgoing.
          * - Active Debts: Any outgoing transaction made by someone other than
          *   the account owner, summed per person.
          */
         function calculateSavingsAccountSummary(account) {
-          var totalSavings = 0;
+          var totalAllIncoming = 0;
+          var ownerIncoming = 0;
+          var ownerOutgoing = 0;
           var totalOutgoing = 0;
           var counts = { all: 0, incoming: 0, outgoing: 0 };
+          var ownerCounts = { incoming: 0, outgoing: 0 };
           var debtMap = {};
           var ownerKey = normalizePersonKey(account ? account.ownerName : '');
 
@@ -9365,12 +9369,16 @@
             for (var i = 0; i < account.transactions.length; i++) {
               var tx = account.transactions[i];
               var amt = toValidAmount(tx.amount);
+              var pKey = normalizePersonKey(tx.personName);
+              var isOwnerTx = !pKey || pKey === ownerKey;
               counts.all++;
               if (tx.type === 'outgoing') {
                 counts.outgoing++;
                 totalOutgoing += amt;
-                var pKey = normalizePersonKey(tx.personName);
-                if (pKey && pKey !== ownerKey) {
+                if (isOwnerTx) {
+                  ownerOutgoing += amt;
+                  ownerCounts.outgoing++;
+                } else {
                   if (!debtMap[pKey]) {
                     debtMap[pKey] = {
                       key: pKey,
@@ -9389,14 +9397,19 @@
                 }
               } else {
                 counts.incoming++;
-                totalSavings += amt;
+                totalAllIncoming += amt;
+                if (isOwnerTx) {
+                  ownerIncoming += amt;
+                  ownerCounts.incoming++;
+                }
               }
             }
           }
 
-          totalSavings = Math.round(totalSavings * 100) / 100;
+          totalAllIncoming = Math.round(totalAllIncoming * 100) / 100;
+          var totalSavings = Math.round((ownerIncoming - ownerOutgoing) * 100) / 100;
           totalOutgoing = Math.round(totalOutgoing * 100) / 100;
-          var actualBalance = Math.round((totalSavings - totalOutgoing) * 100) / 100;
+          var actualBalance = Math.round((totalAllIncoming - totalOutgoing) * 100) / 100;
 
           var activeDebts = Object.keys(debtMap)
             .map(function (k) {
@@ -9411,10 +9424,12 @@
             return Math.round((acc + item.totalDebt) * 100) / 100;
           }, 0);
 
-          var balancePct = totalSavings > 0 ? Math.max(0, Math.min(100, (actualBalance / totalSavings) * 100)) : 0;
+          var balancePct =
+            totalAllIncoming > 0 ? Math.max(0, Math.min(100, (actualBalance / totalAllIncoming) * 100)) : 0;
 
           return {
             totalSavings: totalSavings,
+            totalAllIncoming: totalAllIncoming,
             totalOutgoing: totalOutgoing,
             actualBalance: actualBalance,
             isNegative: actualBalance < 0,
@@ -9422,6 +9437,7 @@
             totalActiveDebts: totalActiveDebts,
             balancePct: balancePct,
             counts: counts,
+            ownerCounts: ownerCounts,
           };
         }
 
@@ -14760,12 +14776,14 @@
             escapeHTML(formatPHP(summary.actualBalance)) +
             '</div>';
           html +=
-            '<div class="projected-inline-line"><span>Total savings (incoming)</span><strong class="projected-inline-value num">' +
+            '<div class="projected-inline-line"><span>Owner total savings</span><strong class="projected-inline-value num' +
+            (summary.totalSavings < 0 ? ' negative' : '') +
+            '">' +
             escapeHTML(formatPHP(summary.totalSavings)) +
             '</strong></div>';
           if (summary.isNegative) {
             html +=
-              '<div class="balance-warning-note">Outgoing withdrawals exceed total savings by ' +
+              '<div class="balance-warning-note">Outgoing withdrawals exceed total incoming by ' +
               escapeHTML(formatPHP(Math.abs(summary.actualBalance))) +
               '</div>';
           }
@@ -14782,7 +14800,9 @@
 
           html += '<div class="balance-metrics-line">';
           html +=
-            '<span class="metric-pair">Total Savings <strong class="num">' +
+            '<span class="metric-pair">Total Savings <strong class="num' +
+            (summary.totalSavings < 0 ? ' negative' : '') +
+            '">' +
             escapeHTML(formatPHP(summary.totalSavings)) +
             '</strong></span>';
           html += '<span class="sep" aria-hidden="true">·</span>';
@@ -14798,11 +14818,17 @@
           // 3. Desktop 4-Column KPI Strip + Active Debts Strip
           html += '<section class="desktop-kpi-strip" aria-label="Savings account financial summary">';
           html +=
-            '<div class="md-kpi-card"><span class="kpi-label">Total Savings</span><span class="kpi-value num">' +
+            '<div class="md-kpi-card"><span class="kpi-label">Total Savings</span><span class="kpi-value num' +
+            (summary.totalSavings < 0 ? ' negative' : '') +
+            '">' +
             escapeHTML(formatPHP(summary.totalSavings)) +
             '</span><span class="kpi-sub">' +
-            summary.counts.incoming +
-            ' incoming</span></div>';
+            escapeHTML(account.ownerName) +
+            ' net (' +
+            summary.ownerCounts.incoming +
+            ' in · ' +
+            summary.ownerCounts.outgoing +
+            ' out)</span></div>';
           html +=
             '<div class="md-kpi-card"><span class="kpi-label">Total Outgoing</span><span class="kpi-value num">' +
             escapeHTML(formatPHP(summary.totalOutgoing)) +
@@ -14826,7 +14852,7 @@
             (summary.isNegative ? 'color: var(--md-error);' : 'color: var(--md-on-primary-container);') +
             '">' +
             escapeHTML(formatPHP(summary.actualBalance)) +
-            '</span><span class="kpi-sub">Total Savings − Outgoing</span></div>';
+            '</span><span class="kpi-sub">All incoming − Outgoing</span></div>';
           html += '</section>';
 
           html += renderSavingsDebtsHTML(summary, true);
