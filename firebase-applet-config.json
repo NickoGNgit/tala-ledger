@@ -1,11 +1,11 @@
 {
-  "projectId": "practical-advice-1c70r",
-  "appId": "1:65914352838:web:43dc59830876b1425d13c7",
-  "apiKey": "AIzaSyD7Gg-F7raXFQCAa57UYK7Y__ccMmfVpxc",
-  "authDomain": "practical-advice-1c70r.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-talaledger-5f678dae-37e7-4e79-a620-6e3a96bfbd47",
-  "storageBucket": "practical-advice-1c70r.firebasestorage.app",
-  "messagingSenderId": "65914352838",
+  "projectId": "tala-ledger",
+  "appId": "1:583153415714:web:a9c4ae7f0c199578877c7b",
+  "apiKey": "AIzaSyBq1rXz6oyWh9vOFdShb2IQflpmSzjD3_s",
+  "authDomain": "tala-ledger.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "tala-ledger.firebasestorage.app",
+  "messagingSenderId": "583153415714",
   "measurementId": "",
   "oAuthClientId": "65914352838-te1rursc8f8e9oo1d8u7b1efatb80v4b.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
