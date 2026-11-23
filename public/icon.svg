@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="talaBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b57d0" />
+      <stop offset="100%" stop-color="#0842a0" />
+    </linearGradient>
+    <linearGradient id="talaCard" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#e8f0fe" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#talaBg)" />
+  <rect x="104" y="96" width="304" height="320" rx="36" fill="url(#talaCard)" />
+  <rect x="148" y="152" width="144" height="24" rx="12" fill="#0b57d0" opacity="0.22" />
+  <rect x="148" y="198" width="216" height="20" rx="10" fill="#0b57d0" opacity="0.14" />
+  <rect x="148" y="242" width="136" height="20" rx="10" fill="#0b57d0" opacity="0.14" />
+  <circle cx="326" cy="316" r="68" fill="#146c2e" />
+  <path d="M294 316l22 22 44-46" fill="none" stroke="#ffffff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" />
+  <rect x="148" y="302" width="90" height="28" rx="14" fill="#0b57d0" />
+</svg>

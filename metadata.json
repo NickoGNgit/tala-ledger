@@ -1,0 +1,6 @@
+{
+  "name": "Tala Ledger",
+  "description": "Fully offline Material Design 3 budget tracker with Salary Planner, projected vs actual balance tracking, recurring deductions, and dual mobile/desktop views.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

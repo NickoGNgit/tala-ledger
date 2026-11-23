@@ -1,0 +1,234 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Private authenticated Google user profile stored under the owner's UID.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Authentication UID matching the document ID.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Verified Google account email address.",
+          "maxLength": 320
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Google account display name.",
+          "maxLength": 128
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "Google profile avatar URL.",
+          "maxLength": 512
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last-updated timestamp."
+        }
+      },
+      "required": ["uid", "email", "displayName", "photoURL", "createdAt", "updatedAt"]
+    },
+    "LedgerState": {
+      "title": "Ledger State",
+      "description": "Complete Tala Ledger financial state synced across devices for an authenticated user.",
+      "type": "object",
+      "properties": {
+        "ownerUid": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "schemaVersion": {
+          "type": "integer",
+          "description": "Client schema version number."
+        },
+        "clientUpdatedAt": {
+          "type": "number",
+          "description": "Client-side monotonic edit timestamp in epoch milliseconds."
+        },
+        "deviceId": {
+          "type": "string",
+          "description": "Originating browser/PWA client identifier.",
+          "maxLength": 64
+        },
+        "preferences": {
+          "type": "object",
+          "description": "User UI theme, accent, view mode, active tab, and payout sort preferences."
+        },
+        "scheduleMeta": {
+          "type": "object",
+          "description": "Payout schedule metadata."
+        },
+        "activePayoutId": {
+          "type": "string",
+          "description": "Currently selected payout cycle ID or null.",
+          "maxLength": 128
+        },
+        "payouts": {
+          "type": "array",
+          "description": "Salary payout cycles and deductions."
+        },
+        "recurringTemplates": {
+          "type": "array",
+          "description": "Recurring salary deduction rules."
+        },
+        "activeSavingsAccountId": {
+          "type": "string",
+          "description": "Currently selected savings account ID or null.",
+          "maxLength": 128
+        },
+        "savingsAccounts": {
+          "type": "array",
+          "description": "Savings accounts and transactions."
+        },
+        "activePayableId": {
+          "type": "string",
+          "description": "Currently selected payable ID or null.",
+          "maxLength": 128
+        },
+        "payables": {
+          "type": "array",
+          "description": "Debts owed and installment payment logs."
+        },
+        "activeReceivableId": {
+          "type": "string",
+          "description": "Currently selected receivable ID or null.",
+          "maxLength": 128
+        },
+        "receivables": {
+          "type": "array",
+          "description": "Amounts owed by others and payments received."
+        },
+        "activeRemittanceId": {
+          "type": "string",
+          "description": "Currently selected remittance bank ID or null.",
+          "maxLength": 128
+        },
+        "remittances": {
+          "type": "array",
+          "description": "Remittance banks, deposits, and withdrawals."
+        },
+        "creditCards": {
+          "type": "array",
+          "description": "Saved credit cards with statement/due dates and credit limits."
+        },
+        "bills": {
+          "type": "array",
+          "description": "Recurring credit card and custom bills with payment history."
+        },
+        "billNotifications": {
+          "type": "object",
+          "description": "Notification service status, push dedupe log, and notification center inbox."
+        },
+        "savedNames": {
+          "type": "object",
+          "description": "Saved person names for savings and remittances autocomplete."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last-updated timestamp."
+        }
+      },
+      "required": [
+        "ownerUid",
+        "schemaVersion",
+        "clientUpdatedAt",
+        "deviceId",
+        "preferences",
+        "scheduleMeta",
+        "activePayoutId",
+        "payouts",
+        "recurringTemplates",
+        "activeSavingsAccountId",
+        "savingsAccounts",
+        "activePayableId",
+        "payables",
+        "activeReceivableId",
+        "receivables",
+        "activeRemittanceId",
+        "remittances",
+        "creditCards",
+        "bills",
+        "billNotifications",
+        "savedNames",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "LedgerAttachment": {
+      "title": "Ledger Attachment",
+      "description": "Image data URL attachment (QR code or receipt) stored separately to keep the main ledger document compact.",
+      "type": "object",
+      "properties": {
+        "ownerUid": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "attachmentId": {
+          "type": "string",
+          "description": "Deterministic attachment ID matching the document ID.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "dataUrl": {
+          "type": "string",
+          "description": "Compressed image data URL.",
+          "maxLength": 900000,
+          "pattern": "^data:image/.*"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last-updated timestamp."
+        }
+      },
+      "required": ["ownerUid", "attachmentId", "dataUrl", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "Owner-only Google user profile document containing PII."
+    },
+    "/users/{userId}/ledger/{ledgerId}": {
+      "schema": {
+        "$ref": "#/entities/LedgerState"
+      },
+      "description": "Single main ledger document ('main') per authenticated user."
+    },
+    "/users/{userId}/attachments/{attachmentId}": {
+      "schema": {
+        "$ref": "#/entities/LedgerAttachment"
+      },
+      "description": "Deduction and recurring-rule QR/receipt image attachments owned by the user."
+    }
+  }
+}
