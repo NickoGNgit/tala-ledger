@@ -9352,8 +9352,8 @@
          *   (account owner's incoming minus account owner's outgoing).
          * - Total Outgoing: Sum of all outgoing transactions.
          * - Actual Balance: All incoming transactions minus Total Outgoing.
-         * - Active Debts: Any outgoing transaction made by someone other than
-         *   the account owner, summed per person.
+         * - Active Debts: Any non-owner's outgoing withdrawals minus that same
+         *   person's incoming payments; cleared automatically when net <= 0.
          */
         function calculateSavingsAccountSummary(account) {
           var totalAllIncoming = 0;
@@ -9364,6 +9364,27 @@
           var ownerCounts = { incoming: 0, outgoing: 0 };
           var debtMap = {};
           var ownerKey = normalizePersonKey(account ? account.ownerName : '');
+
+          var ensurePersonBucket = function (pKey, rawName) {
+            var trimmed = String(rawName || '').trim();
+            if (!debtMap[pKey]) {
+              debtMap[pKey] = {
+                key: pKey,
+                personName: trimmed,
+                totalWithdrawn: 0,
+                totalPaid: 0,
+                totalDebt: 0,
+                count: 0,
+                paidCount: 0,
+              };
+            } else if (
+              debtMap[pKey].personName === debtMap[pKey].personName.toLowerCase() &&
+              trimmed !== trimmed.toLowerCase()
+            ) {
+              debtMap[pKey].personName = trimmed;
+            }
+            return debtMap[pKey];
+          };
 
           if (account && Array.isArray(account.transactions)) {
             for (var i = 0; i < account.transactions.length; i++) {
@@ -9379,21 +9400,9 @@
                   ownerOutgoing += amt;
                   ownerCounts.outgoing++;
                 } else {
-                  if (!debtMap[pKey]) {
-                    debtMap[pKey] = {
-                      key: pKey,
-                      personName: tx.personName.trim(),
-                      totalDebt: 0,
-                      count: 0,
-                    };
-                  } else if (
-                    debtMap[pKey].personName === debtMap[pKey].personName.toLowerCase() &&
-                    tx.personName.trim() !== tx.personName.trim().toLowerCase()
-                  ) {
-                    debtMap[pKey].personName = tx.personName.trim();
-                  }
-                  debtMap[pKey].totalDebt = Math.round((debtMap[pKey].totalDebt + amt) * 100) / 100;
-                  debtMap[pKey].count++;
+                  var outBucket = ensurePersonBucket(pKey, tx.personName);
+                  outBucket.totalWithdrawn = Math.round((outBucket.totalWithdrawn + amt) * 100) / 100;
+                  outBucket.count++;
                 }
               } else {
                 counts.incoming++;
@@ -9401,6 +9410,10 @@
                 if (isOwnerTx) {
                   ownerIncoming += amt;
                   ownerCounts.incoming++;
+                } else {
+                  var inBucket = ensurePersonBucket(pKey, tx.personName);
+                  inBucket.totalPaid = Math.round((inBucket.totalPaid + amt) * 100) / 100;
+                  inBucket.paidCount++;
                 }
               }
             }
@@ -9411,14 +9424,25 @@
           totalOutgoing = Math.round(totalOutgoing * 100) / 100;
           var actualBalance = Math.round((totalAllIncoming - totalOutgoing) * 100) / 100;
 
-          var activeDebts = Object.keys(debtMap)
-            .map(function (k) {
-              return debtMap[k];
-            })
-            .sort(function (a, b) {
-              if (b.totalDebt !== a.totalDebt) return b.totalDebt - a.totalDebt;
-              return a.personName.localeCompare(b.personName);
-            });
+          var activeDebtKeys = {};
+          var settledDebtKeys = {};
+          var activeDebts = [];
+
+          Object.keys(debtMap).forEach(function (k) {
+            var item = debtMap[k];
+            item.totalDebt = Math.round((item.totalWithdrawn - item.totalPaid) * 100) / 100;
+            if (item.totalDebt > 0) {
+              activeDebtKeys[k] = true;
+              activeDebts.push(item);
+            } else if (item.totalWithdrawn > 0) {
+              settledDebtKeys[k] = true;
+            }
+          });
+
+          activeDebts.sort(function (a, b) {
+            if (b.totalDebt !== a.totalDebt) return b.totalDebt - a.totalDebt;
+            return a.personName.localeCompare(b.personName);
+          });
 
           var totalActiveDebts = activeDebts.reduce(function (acc, item) {
             return Math.round((acc + item.totalDebt) * 100) / 100;
@@ -9434,6 +9458,8 @@
             actualBalance: actualBalance,
             isNegative: actualBalance < 0,
             activeDebts: activeDebts,
+            activeDebtKeys: activeDebtKeys,
+            settledDebtKeys: settledDebtKeys,
             totalActiveDebts: totalActiveDebts,
             balancePct: balancePct,
             counts: counts,
@@ -14579,12 +14605,15 @@
             '<div class="savings-debt-list">';
           for (var j = 0; j < summary.activeDebts.length; j++) {
             var item = summary.activeDebts[j];
+            var subMetaParts = [];
+            if (item.count > 1) subMetaParts.push(item.count + ' withdrawals');
+            if (item.totalPaid > 0) subMetaParts.push(formatPHP(item.totalPaid) + ' paid');
             cardSec +=
               '<div class="savings-debt-item">' +
               '<span class="savings-debt-person truncate">' +
               escapeHTML(item.personName) +
-              (item.count > 1
-                ? ' <span class="savings-debt-count">(' + item.count + ' withdrawals)</span>'
+              (subMetaParts.length > 0
+                ? ' <span class="savings-debt-count">(' + escapeHTML(subMetaParts.join(' · ')) + ')</span>'
                 : '') +
               '</span>' +
               '<span class="savings-debt-amt num">' +
@@ -14599,7 +14628,10 @@
         function renderSavingsTxEditorHTML(account, tx, mode) {
           var isDesktop = mode === 'desktop';
           var txType = tx.type === 'outgoing' ? 'outgoing' : 'incoming';
-          var isDebt = isTransactionNonOwnerDebt(account, tx);
+          var txSummary = calculateSavingsAccountSummary(account);
+          var txPKey = normalizePersonKey(tx.personName);
+          var isDebt = isTransactionNonOwnerDebt(account, tx) && Boolean(txSummary.activeDebtKeys[txPKey]);
+          var isClearedDebt = isTransactionNonOwnerDebt(account, tx) && Boolean(txSummary.settledDebtKeys[txPKey]);
           var formId = 'edit-sav-tx-form-' + mode;
           var typeHiddenId = 'edit-sav-tx-type-' + mode;
           var personInputId = 'edit-sav-tx-person-' + mode;
@@ -14616,7 +14648,11 @@
             '">' +
             (txType === 'outgoing' ? 'Outgoing' : 'Incoming') +
             '</span>' +
-            (isDebt ? ' · <span class="tx-debt-note">Active Debt</span>' : '') +
+            (isDebt
+              ? ' · <span class="tx-debt-note">Active Debt</span>'
+              : isClearedDebt
+                ? ' · <span class="tx-type-incoming">Debt Cleared</span>'
+                : '') +
             '</div>';
           html += '</div>';
           html +=
@@ -14925,7 +14961,10 @@
             for (var sm = 0; sm < filtered.length; sm++) {
               var stx = filtered[sm];
               var isOut = stx.type === 'outgoing';
-              var isDebtTx = isTransactionNonOwnerDebt(account, stx);
+              var stxPKey = normalizePersonKey(stx.personName);
+              var isNonOwnerOut = isTransactionNonOwnerDebt(account, stx);
+              var isDebtTx = isNonOwnerOut && Boolean(summary.activeDebtKeys[stxPKey]);
+              var isClearedTx = isNonOwnerOut && Boolean(summary.settledDebtKeys[stxPKey]);
               html +=
                 '<div class="swipe-row-shell js-swipe-row" role="listitem" data-swipe-id="' +
                 stx.id +
@@ -14956,6 +14995,9 @@
               if (isDebtTx) {
                 html += '<span class="sep" aria-hidden="true">·</span>';
                 html += '<span class="tx-debt-note">Debt</span>';
+              } else if (isClearedTx) {
+                html += '<span class="sep" aria-hidden="true">·</span>';
+                html += '<span class="tx-type-incoming">Cleared</span>';
               }
               if (stx.description) {
                 html += '<span class="sep" aria-hidden="true">·</span>';
@@ -14985,7 +15027,10 @@
             for (var st = 0; st < filtered.length; st++) {
               var dtx = filtered[st];
               var dOut = dtx.type === 'outgoing';
-              var dDebt = isTransactionNonOwnerDebt(account, dtx);
+              var dtxPKey = normalizePersonKey(dtx.personName);
+              var dNonOwnerOut = isTransactionNonOwnerDebt(account, dtx);
+              var dDebt = dNonOwnerOut && Boolean(summary.activeDebtKeys[dtxPKey]);
+              var dCleared = dNonOwnerOut && Boolean(summary.settledDebtKeys[dtxPKey]);
               var dSel = dtx.id === uiState.selectedSavingsTxId;
               html +=
                 '<tr class="js-desktop-swipe-row' +
@@ -14998,7 +15043,11 @@
                 '<td><div class="table-item-name">' +
                 escapeHTML(dtx.personName) +
                 '</div>' +
-                (dDebt ? '<div class="table-item-note tx-debt-note">Active Debt</div>' : '') +
+                (dDebt
+                  ? '<div class="table-item-note tx-debt-note">Active Debt</div>'
+                  : dCleared
+                    ? '<div class="table-item-note tx-type-incoming">Debt Cleared</div>'
+                    : '') +
                 '</td>';
               html +=
                 '<td style="color: var(--md-on-surface-variant);">' +
