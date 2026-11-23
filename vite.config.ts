@@ -83,6 +83,7 @@ export default defineConfig(({command}) => {
       },
       VitePWA({
         registerType: 'autoUpdate',
+        injectRegister: false,
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg', 'sw-notifications.js'],
         manifest: {
           id: './',
@@ -138,6 +139,7 @@ export default defineConfig(({command}) => {
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          globIgnores: ['**/assets/aistudio/**'],
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           navigateFallback: 'index.html',
           importScripts: ['sw-notifications.js'],
