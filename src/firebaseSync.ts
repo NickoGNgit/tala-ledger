@@ -137,6 +137,19 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   throw new Error(JSON.stringify(errInfo));
 }
 
+async function getDocServerFirst(ref: ReturnType<typeof doc>) {
+  try {
+    return await getDocFromServer(ref);
+  } catch (err: unknown) {
+    const code = (err as {code?: string})?.code || '';
+    const msg = err instanceof Error ? err.message : '';
+    if (code === 'permission-denied' || msg.includes('Missing or insufficient permissions')) {
+      throw err;
+    }
+    return await getDoc(ref);
+  }
+}
+
 async function testConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
@@ -330,6 +343,10 @@ class TalaCloudSyncManager {
   private currentUser: User | null = null;
   private unsubLedger: Unsubscribe | null = null;
   private pushTimer: ReturnType<typeof setTimeout> | null = null;
+  private authInitPromise: Promise<void> | null = null;
+  private pushInFlight: Promise<void> | null = null;
+  private hasQueuedPush = false;
+  private queuedPushState: Record<string, unknown> | undefined = undefined;
   private hasCloudLedgerDoc = false;
   private lastPushedAt = 0;
   private pendingConflictCloud: Record<string, unknown> | null = null;
@@ -544,7 +561,7 @@ class TalaCloudSyncManager {
     } catch {
       /* ignore */
     }
-    this.updateStatus({conflictSummary: null});
+    this.updateStatus({syncState: 'syncing', conflictSummary: null, errorMessage: null});
     await this.pushNow(this.bridge.getLocalState());
     this.bridge.showToast?.(
       choice === 'merge' ? 'Merged local and cloud data and synced.' : 'Updated Google Cloud with your local data.'
@@ -566,7 +583,7 @@ class TalaCloudSyncManager {
     const userRef = doc(db, 'users', user.uid);
     const info = this.toCloudUser(user);
     try {
-      const snap = await getDoc(userRef);
+      const snap = await getDocServerFirst(userRef);
       if (!snap.exists()) {
         await setDoc(userRef, {
           uid: user.uid,
@@ -736,6 +753,35 @@ class TalaCloudSyncManager {
   }
 
   private async pushNow(explicitLocalState?: Record<string, unknown>): Promise<void> {
+    if (this.authInitPromise) {
+      await this.authInitPromise;
+    }
+    if (!this.currentUser || !this.bridge) return;
+    if (this.status.syncState === 'conflict') return;
+    if (this.pushInFlight) {
+      this.hasQueuedPush = true;
+      this.queuedPushState = explicitLocalState;
+      await this.pushInFlight;
+      return;
+    }
+
+    const run = async () => {
+      await this.executePushNow(explicitLocalState);
+      while (this.hasQueuedPush) {
+        this.hasQueuedPush = false;
+        const nextState = this.queuedPushState;
+        this.queuedPushState = undefined;
+        await this.executePushNow(nextState);
+      }
+    };
+
+    this.pushInFlight = run().finally(() => {
+      this.pushInFlight = null;
+    });
+    await this.pushInFlight;
+  }
+
+  private async executePushNow(explicitLocalState?: Record<string, unknown>): Promise<void> {
     if (!this.currentUser || !this.bridge) return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       this.updateStatus({syncState: 'offline'});
@@ -746,7 +792,7 @@ class TalaCloudSyncManager {
     const ledgerPath = `users/${uid}/ledger/main`;
     const ledgerRef = doc(db, 'users', uid, 'ledger', 'main');
     const nowMs = Date.now();
-    const devId = getDeviceId();
+    const devId = getDeviceId().slice(0, 64) || 'dev_default';
 
     this.updateStatus({syncState: 'syncing', errorMessage: null});
 
@@ -754,34 +800,61 @@ class TalaCloudSyncManager {
       await this.ensureUserProfileDoc(this.currentUser);
       const localRaw = explicitLocalState || this.bridge.getLocalState();
       const cleaned = await this.offloadAttachments(uid, localRaw);
+      const rawPrefs = (cleaned.preferences as Record<string, unknown>) || {};
+      const rawMeta = (cleaned.scheduleMeta as Record<string, unknown>) || {};
+      const rawNotif = (cleaned.billNotifications as Record<string, unknown>) || {};
+      const rawNames = (cleaned.savedNames as Record<string, unknown>) || {};
+      const toSafeId = (val: unknown): string | null => {
+        if (typeof val !== 'string') return null;
+        const trimmed = val.trim();
+        return trimmed ? trimmed.slice(0, 128) : null;
+      };
       const baseFields = {
-        schemaVersion: typeof cleaned.schemaVersion === 'number' ? cleaned.schemaVersion : 6,
-        clientUpdatedAt: nowMs,
+        schemaVersion: Math.min(100, Math.max(1, Math.trunc(Number(cleaned.schemaVersion) || 6))),
+        clientUpdatedAt: Math.max(0, Math.trunc(Number(nowMs) || Date.now())),
         deviceId: devId,
-        preferences: (cleaned.preferences as Record<string, unknown>) || {},
-        scheduleMeta: (cleaned.scheduleMeta as Record<string, unknown>) || {},
-        activePayoutId: typeof cleaned.activePayoutId === 'string' ? cleaned.activePayoutId : null,
-        payouts: Array.isArray(cleaned.payouts) ? cleaned.payouts : [],
-        recurringTemplates: Array.isArray(cleaned.recurringTemplates) ? cleaned.recurringTemplates : [],
-        activeSavingsAccountId:
-          typeof cleaned.activeSavingsAccountId === 'string' ? cleaned.activeSavingsAccountId : null,
-        savingsAccounts: Array.isArray(cleaned.savingsAccounts) ? cleaned.savingsAccounts : [],
-        activePayableId: typeof cleaned.activePayableId === 'string' ? cleaned.activePayableId : null,
-        payables: Array.isArray(cleaned.payables) ? cleaned.payables : [],
-        activeReceivableId: typeof cleaned.activeReceivableId === 'string' ? cleaned.activeReceivableId : null,
-        receivables: Array.isArray(cleaned.receivables) ? cleaned.receivables : [],
-        activeRemittanceId: typeof cleaned.activeRemittanceId === 'string' ? cleaned.activeRemittanceId : null,
-        remittances: Array.isArray(cleaned.remittances) ? cleaned.remittances : [],
-        creditCards: Array.isArray(cleaned.creditCards) ? cleaned.creditCards : [],
-        bills: Array.isArray(cleaned.bills) ? cleaned.bills : [],
-        billNotifications: (cleaned.billNotifications as Record<string, unknown>) || {},
-        savedNames: (cleaned.savedNames as Record<string, unknown>) || {},
+        preferences: {
+          theme: typeof rawPrefs.theme === 'string' ? rawPrefs.theme : 'light',
+          accent: typeof rawPrefs.accent === 'string' ? rawPrefs.accent : 'blue',
+          viewMode: typeof rawPrefs.viewMode === 'string' ? rawPrefs.viewMode : 'mobile',
+          activeTab: typeof rawPrefs.activeTab === 'string' ? rawPrefs.activeTab : 'salary',
+          payoutSort: typeof rawPrefs.payoutSort === 'string' ? rawPrefs.payoutSort : 'desc',
+        },
+        scheduleMeta: {
+          payoutsPerMonth: Number(rawMeta.payoutsPerMonth) || 2,
+          wholeYearUsed: Boolean(rawMeta.wholeYearUsed),
+        },
+        activePayoutId: toSafeId(cleaned.activePayoutId),
+        payouts: Array.isArray(cleaned.payouts) ? cleaned.payouts.slice(0, 500) : [],
+        recurringTemplates: Array.isArray(cleaned.recurringTemplates) ? cleaned.recurringTemplates.slice(0, 200) : [],
+        activeSavingsAccountId: toSafeId(cleaned.activeSavingsAccountId),
+        savingsAccounts: Array.isArray(cleaned.savingsAccounts) ? cleaned.savingsAccounts.slice(0, 100) : [],
+        activePayableId: toSafeId(cleaned.activePayableId),
+        payables: Array.isArray(cleaned.payables) ? cleaned.payables.slice(0, 200) : [],
+        activeReceivableId: toSafeId(cleaned.activeReceivableId),
+        receivables: Array.isArray(cleaned.receivables) ? cleaned.receivables.slice(0, 200) : [],
+        activeRemittanceId: toSafeId(cleaned.activeRemittanceId),
+        remittances: Array.isArray(cleaned.remittances) ? cleaned.remittances.slice(0, 100) : [],
+        creditCards: Array.isArray(cleaned.creditCards) ? cleaned.creditCards.slice(0, 100) : [],
+        bills: Array.isArray(cleaned.bills) ? cleaned.bills.slice(0, 300) : [],
+        billNotifications: {
+          enabled: rawNotif.enabled !== false,
+          dismissedToday:
+            rawNotif.dismissedToday && typeof rawNotif.dismissedToday === 'object' ? rawNotif.dismissedToday : {},
+          sentPushLog: rawNotif.sentPushLog && typeof rawNotif.sentPushLog === 'object' ? rawNotif.sentPushLog : {},
+          deletedKeys: rawNotif.deletedKeys && typeof rawNotif.deletedKeys === 'object' ? rawNotif.deletedKeys : {},
+          items: Array.isArray(rawNotif.items) ? rawNotif.items : [],
+        },
+        savedNames: {
+          savings: Array.isArray(rawNames.savings) ? rawNames.savings : [],
+          remittances: Array.isArray(rawNames.remittances) ? rawNames.remittances : [],
+        },
       };
 
       this.lastPushedAt = nowMs;
 
       if (!this.hasCloudLedgerDoc) {
-        const existingSnap = await getDoc(ledgerRef);
+        const existingSnap = await getDocServerFirst(ledgerRef);
         this.hasCloudLedgerDoc = existingSnap.exists();
       }
 
@@ -813,12 +886,16 @@ class TalaCloudSyncManager {
         errorMessage: null,
       });
     } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Cloud sync failed.';
+      const rawMsg = error instanceof Error ? error.message : 'Cloud sync failed.';
+      const isPerm = rawMsg.includes('Missing or insufficient permissions');
+      const displayMsg = isPerm
+        ? 'Firestore permission denied. Please verify that your latest firestore.rules are published in Firebase Console for the (default) database.'
+        : rawMsg;
       this.updateStatus({
         syncState: 'error',
-        errorMessage: msg,
+        errorMessage: displayMsg,
       });
-      if (msg.includes('Missing or insufficient permissions')) {
+      if (isPerm) {
         handleFirestoreError(error, OperationType.WRITE, ledgerPath);
       }
     }
@@ -834,6 +911,7 @@ class TalaCloudSyncManager {
     this.pendingConflictCloud = null;
 
     if (!user) {
+      this.authInitPromise = null;
       this.updateStatus({
         ready: true,
         user: null,
@@ -855,109 +933,115 @@ class TalaCloudSyncManager {
 
     if (!this.bridge) return;
 
-    try {
-      await this.ensureUserProfileDoc(user);
-      const ledgerPath = `users/${user.uid}/ledger/main`;
-      const ledgerRef = doc(db, 'users', user.uid, 'ledger', 'main');
-      const initialSnap = await getDoc(ledgerRef);
-      const linkedUid = localStorage.getItem(LINKED_UID_KEY);
-      const isDirty = localStorage.getItem(DIRTY_FLAG_KEY) === '1';
-      const localState = this.bridge.getLocalState();
-      const localHasData = this.bridge.hasMeaningfulData
-        ? this.bridge.hasMeaningfulData(localState)
-        : countLedgerItems(localState) > 0;
+    const runInit = async () => {
+      try {
+        await this.ensureUserProfileDoc(user);
+        const ledgerPath = `users/${user.uid}/ledger/main`;
+        const ledgerRef = doc(db, 'users', user.uid, 'ledger', 'main');
+        const initialSnap = await getDocServerFirst(ledgerRef);
+        const linkedUid = localStorage.getItem(LINKED_UID_KEY);
+        const isDirty = localStorage.getItem(DIRTY_FLAG_KEY) === '1';
+        const localState = this.bridge!.getLocalState();
+        const localHasData = this.bridge!.hasMeaningfulData
+          ? this.bridge!.hasMeaningfulData(localState)
+          : countLedgerItems(localState) > 0;
 
-      if (!initialSnap.exists()) {
-        this.hasCloudLedgerDoc = false;
-        await this.pushNow(localState);
-      } else {
-        this.hasCloudLedgerDoc = true;
-        const cloudData = initialSnap.data() as Record<string, unknown>;
-        const cloudHasData = countLedgerItems(cloudData) > 0;
-        const cloudClientUpdatedAt =
-          typeof cloudData.clientUpdatedAt === 'number'
-            ? cloudData.clientUpdatedAt
-            : cloudData.updatedAt instanceof Timestamp
-              ? cloudData.updatedAt.toMillis()
-              : 0;
-
-        if (linkedUid !== user.uid && localHasData && cloudHasData) {
-          // Both this device and Google Cloud have independent data -> ask user how to handle first link
-          const localUpdatedAt = Number(localStorage.getItem(LOCAL_UPDATED_KEY) || 0) || Date.now();
-          this.pendingConflictCloud = cloudData;
-          this.pendingConflictCloudUpdatedAt = cloudClientUpdatedAt;
-          this.updateStatus({
-            syncState: 'conflict',
-            conflictSummary: {
-              localCount: countLedgerItems(localState),
-              cloudCount: countLedgerItems(cloudData),
-              localUpdatedAt,
-              cloudUpdatedAt: cloudClientUpdatedAt,
-            },
-          });
-        } else if (linkedUid === user.uid && isDirty) {
-          await this.pushNow(localState);
-        } else if (!localHasData || cloudHasData) {
-          const hydrated = await this.hydrateAttachments(user.uid, cloudData);
-          this.applyRemoteStateSafely(hydrated);
-          try {
-            localStorage.setItem(LINKED_UID_KEY, user.uid);
-            localStorage.removeItem(DIRTY_FLAG_KEY);
-          } catch {
-            /* ignore */
-          }
-          this.updateStatus({
-            syncState: 'synced',
-            lastSyncedAt: Date.now(),
-            errorMessage: null,
-          });
+        if (!initialSnap.exists()) {
+          this.hasCloudLedgerDoc = false;
+          await this.executePushNow(localState);
         } else {
-          await this.pushNow(localState);
-        }
-      }
+          this.hasCloudLedgerDoc = true;
+          const cloudData = initialSnap.data() as Record<string, unknown>;
+          const cloudHasData = countLedgerItems(cloudData) > 0;
+          const cloudClientUpdatedAt =
+            typeof cloudData.clientUpdatedAt === 'number'
+              ? cloudData.clientUpdatedAt
+              : cloudData.updatedAt instanceof Timestamp
+                ? cloudData.updatedAt.toMillis()
+                : 0;
 
-      // Attach live Firestore listener
-      const devId = getDeviceId();
-      this.unsubLedger = onSnapshot(
-        ledgerRef,
-        async (snap) => {
-          if (!snap.exists()) return;
-          if (this.status.syncState === 'conflict') return;
-          const remote = snap.data() as Record<string, unknown>;
-          const remoteDev = typeof remote.deviceId === 'string' ? remote.deviceId : '';
-          const remoteTs = typeof remote.clientUpdatedAt === 'number' ? remote.clientUpdatedAt : 0;
-          if (remoteDev === devId && remoteTs <= this.lastPushedAt) {
-            return;
+          if (linkedUid !== user.uid && localHasData && cloudHasData) {
+            const localUpdatedAt = Number(localStorage.getItem(LOCAL_UPDATED_KEY) || 0) || Date.now();
+            this.pendingConflictCloud = cloudData;
+            this.pendingConflictCloudUpdatedAt = cloudClientUpdatedAt;
+            this.updateStatus({
+              syncState: 'conflict',
+              conflictSummary: {
+                localCount: countLedgerItems(localState),
+                cloudCount: countLedgerItems(cloudData),
+                localUpdatedAt,
+                cloudUpdatedAt: cloudClientUpdatedAt,
+              },
+            });
+          } else if (linkedUid === user.uid && isDirty) {
+            await this.executePushNow(localState);
+          } else if (!localHasData || cloudHasData) {
+            const hydrated = await this.hydrateAttachments(user.uid, cloudData);
+            this.applyRemoteStateSafely(hydrated);
+            try {
+              localStorage.setItem(LINKED_UID_KEY, user.uid);
+              localStorage.removeItem(DIRTY_FLAG_KEY);
+            } catch {
+              /* ignore */
+            }
+            this.updateStatus({
+              syncState: 'synced',
+              lastSyncedAt: Date.now(),
+              errorMessage: null,
+            });
+          } else {
+            await this.executePushNow(localState);
           }
-          const hydrated = await this.hydrateAttachments(user.uid, remote);
-          this.applyRemoteStateSafely(hydrated);
-          try {
-            localStorage.setItem(LINKED_UID_KEY, user.uid);
-            localStorage.removeItem(DIRTY_FLAG_KEY);
-          } catch {
-            /* ignore */
-          }
-          this.updateStatus({
-            syncState: 'synced',
-            lastSyncedAt: Date.now(),
-            errorMessage: null,
-          });
-        },
-        (error) => {
-          this.updateStatus({
-            syncState: 'error',
-            errorMessage: error.message,
-          });
-          handleFirestoreError(error, OperationType.GET, ledgerPath);
         }
-      );
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Unable to sync with Google Cloud.';
-      this.updateStatus({
-        syncState: typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'error',
-        errorMessage: msg,
-      });
-    }
+
+        // Attach live Firestore listener
+        const devId = getDeviceId();
+        this.unsubLedger = onSnapshot(
+          ledgerRef,
+          async (snap) => {
+            if (!snap.exists()) return;
+            if (this.status.syncState === 'conflict') return;
+            const remote = snap.data() as Record<string, unknown>;
+            const remoteDev = typeof remote.deviceId === 'string' ? remote.deviceId : '';
+            const remoteTs = typeof remote.clientUpdatedAt === 'number' ? remote.clientUpdatedAt : 0;
+            if (remoteDev === devId && remoteTs <= this.lastPushedAt) {
+              return;
+            }
+            const hydrated = await this.hydrateAttachments(user.uid, remote);
+            this.applyRemoteStateSafely(hydrated);
+            try {
+              localStorage.setItem(LINKED_UID_KEY, user.uid);
+              localStorage.removeItem(DIRTY_FLAG_KEY);
+            } catch {
+              /* ignore */
+            }
+            this.updateStatus({
+              syncState: 'synced',
+              lastSyncedAt: Date.now(),
+              errorMessage: null,
+            });
+          },
+          (error) => {
+            this.updateStatus({
+              syncState: 'error',
+              errorMessage: error.message,
+            });
+            handleFirestoreError(error, OperationType.GET, ledgerPath);
+          }
+        );
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unable to sync with Google Cloud.';
+        this.updateStatus({
+          syncState: typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'error',
+          errorMessage: msg,
+        });
+      }
+    };
+
+    this.authInitPromise = runInit().finally(() => {
+      this.authInitPromise = null;
+    });
+    await this.authInitPromise;
   }
 }
 
