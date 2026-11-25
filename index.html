@@ -12359,6 +12359,19 @@
           renderOverlays();
         }
 
+        function detectCloudSyncModuleError() {
+          if (typeof window === 'undefined') return null;
+          if (window.__talaCloudSyncLoadError) return window.__talaCloudSyncLoadError;
+          try {
+            var rawModule = document.querySelector('script[type="module"][src*="/src/main.tsx"]');
+            var host = String((window.location && window.location.hostname) || '').toLowerCase();
+            if (rawModule && host.indexOf('github.io') !== -1) {
+              return 'GitHub Pages is currently serving raw source files instead of the built app. Open your repo Settings → Pages → set Source to "GitHub Actions", then re-run the deploy workflow and refresh.';
+            }
+          } catch (_e) {}
+          return null;
+        }
+
         function getCloudSyncStatusSafe() {
           if (typeof window !== 'undefined' && window.TalaCloudSync && typeof window.TalaCloudSync.getStatus === 'function') {
             return window.TalaCloudSync.getStatus();
@@ -12368,7 +12381,7 @@
             user: null,
             syncState: 'signed_out',
             lastSyncedAt: null,
-            errorMessage: null,
+            errorMessage: detectCloudSyncModuleError(),
             conflictSummary: null,
           };
         }
@@ -23480,7 +23493,12 @@
             if (window.TalaCloudSync) {
               window.TalaCloudSync.signInWithGoogle();
             } else {
-              showToast('Cloud sync module is still loading. Please try again in a second.', true);
+              var loadErr = detectCloudSyncModuleError();
+              showToast(
+                loadErr || 'Cloud sync module is still loading. Please try again in a second.',
+                true
+              );
+              if (uiState.activeModal === 'settings') renderOverlays();
             }
             return;
           }
@@ -25406,6 +25424,15 @@
         }
 
         if (typeof window !== 'undefined') {
+          var modScripts = document.querySelectorAll('script[type="module"]');
+          for (var ms = 0; ms < modScripts.length; ms++) {
+            modScripts[ms].addEventListener('error', function () {
+              window.__talaCloudSyncLoadError =
+                'Could not load the Cloud Sync script. Please refresh the page or check that GitHub Pages Source is set to "GitHub Actions".';
+              renderHeaderCloudAndNotifChrome();
+              if (uiState.activeModal === 'settings') renderOverlays();
+            });
+          }
           window.addEventListener('tala-cloud-sync-ready', attachTalaCloudSyncBridge);
           window.addEventListener('DOMContentLoaded', attachTalaCloudSyncBridge);
         }
