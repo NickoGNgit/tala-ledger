@@ -585,8 +585,13 @@ class TalaCloudSyncManager {
     const path = `users/${user.uid}`;
     const userRef = doc(db, 'users', user.uid);
     const info = this.toCloudUser(user);
+    let snap;
     try {
-      const snap = await getDocServerFirst(userRef);
+      snap = await getDocServerFirst(userRef);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.GET, path);
+    }
+    try {
       if (!snap.exists()) {
         await setDoc(userRef, {
           uid: user.uid,
@@ -890,14 +895,18 @@ class TalaCloudSyncManager {
     } catch (error) {
       const rawMsg = error instanceof Error ? error.message : 'Cloud sync failed.';
       const isPerm = rawMsg.includes('Missing or insufficient permissions');
+      const isStructuredFirestoreError = rawMsg.startsWith('{') && rawMsg.includes('"operationType"');
       const displayMsg = isPerm
-        ? 'Firestore permission denied. Please verify that your latest firestore.rules are published in Firebase Console for the (default) database.'
+        ? `Firestore permission denied. Please verify that your latest firestore.rules are published for database "${databaseId || '(default)'}".`
         : rawMsg;
       this.updateStatus({
         syncState: 'error',
         errorMessage: displayMsg,
       });
       if (isPerm) {
+        if (isStructuredFirestoreError) {
+          throw error;
+        }
         handleFirestoreError(error, OperationType.WRITE, ledgerPath);
       }
     }
