@@ -334,6 +334,9 @@ function mergeLedgerStates(localSt: Record<string, unknown>, cloudSt: Record<str
   if (!merged.activeRemittanceId && localSt.activeRemittanceId) {
     merged.activeRemittanceId = localSt.activeRemittanceId;
   }
+  if (merged.preferences && typeof merged.preferences === 'object') {
+    delete (merged.preferences as Record<string, unknown>).viewMode;
+  }
   return merged;
 }
 
@@ -816,7 +819,6 @@ class TalaCloudSyncManager {
         preferences: {
           theme: typeof rawPrefs.theme === 'string' ? rawPrefs.theme : 'light',
           accent: typeof rawPrefs.accent === 'string' ? rawPrefs.accent : 'blue',
-          viewMode: typeof rawPrefs.viewMode === 'string' ? rawPrefs.viewMode : 'mobile',
           activeTab: typeof rawPrefs.activeTab === 'string' ? rawPrefs.activeTab : 'salary',
           payoutSort: typeof rawPrefs.payoutSort === 'string' ? rawPrefs.payoutSort : 'desc',
         },

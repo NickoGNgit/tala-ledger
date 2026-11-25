@@ -25,6 +25,48 @@
     <link rel="icon" href="./favicon.ico" sizes="any" />
     <script>
       (function () {
+        window.__resolveTalaViewMode = function () {
+          try {
+            var w = window.innerWidth || (document.documentElement && document.documentElement.clientWidth) || 390;
+            var h = window.innerHeight || (document.documentElement && document.documentElement.clientHeight) || 844;
+            var ua = String((navigator && navigator.userAgent) || '');
+            var isPhoneUA = /iPhone|iPod|Windows Phone|IEMobile/i.test(ua) || (/Android/i.test(ua) && /Mobile/i.test(ua));
+            var isTabletUA =
+              !isPhoneUA &&
+              (/iPad|Tablet|PlayBook|Silk/i.test(ua) ||
+                (/Android/i.test(ua) && !/Mobile/i.test(ua)) ||
+                (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1));
+            var isCoarseOnly = false;
+            try {
+              isCoarseOnly = Boolean(
+                window.matchMedia &&
+                  window.matchMedia('(pointer: coarse)').matches &&
+                  !window.matchMedia('(any-pointer: fine)').matches
+              );
+            } catch (_mqErr) {}
+
+            // Phones in normal mobile view (portrait or landscape) stay on portrait/mobile layout;
+            // Mobile browser "Desktop mode" removes Mobile from UA and widens layout viewport to ~980px+
+            if (isPhoneUA && w < 970) {
+              return 'mobile';
+            }
+            // Tablets default to desktop view to maximize screen real-estate
+            if (isTabletUA) {
+              return w >= 580 ? 'desktop' : 'mobile';
+            }
+            // Fallback for coarse-touch mobile browsers in landscape that omit "Mobile" from UA
+            if (isCoarseOnly && Math.min(w, h) < 520 && w < 970) {
+              return 'mobile';
+            }
+            // Desktop browsers & mobile browsers with Desktop mode enabled respond dynamically to width
+            return w >= 740 ? 'desktop' : 'mobile';
+          } catch (_err) {
+            return 'mobile';
+          }
+        };
+
+        document.documentElement.setAttribute('data-view', window.__resolveTalaViewMode());
+
         try {
           var raw = localStorage.getItem('tala_ledger_v1');
           if (raw) {
@@ -41,9 +83,6 @@
                 ['blue', 'emerald', 'indigo', 'teal', 'terracotta', 'rose'].indexOf(parsed.preferences.accent) !== -1
               ) {
                 document.documentElement.setAttribute('data-accent', parsed.preferences.accent);
-              }
-              if (parsed.preferences.viewMode === 'desktop' || parsed.preferences.viewMode === 'mobile') {
-                document.documentElement.setAttribute('data-view', parsed.preferences.viewMode);
               }
             }
           }
@@ -566,11 +605,19 @@
         overflow: hidden;
       }
 
-      @media (min-width: 560px) {
+      @media (min-width: 560px) and (min-height: 540px) {
         :root[data-view='mobile'] body {
           background-color: var(--md-surface-dim);
           align-items: center;
           padding: 12px;
+        }
+      }
+
+      @media (min-width: 560px) and (max-height: 539px) {
+        :root[data-view='mobile'] body {
+          background-color: var(--md-surface-dim);
+          align-items: stretch;
+          padding: 0;
         }
       }
 
@@ -611,7 +658,7 @@
         opacity: 0.68;
       }
 
-      @media (min-width: 560px) {
+      @media (min-width: 560px) and (min-height: 540px) {
         :root[data-view='mobile'] #app-shell {
           width: 432px;
           max-width: 100%;
@@ -620,6 +667,18 @@
           border-radius: 30px;
           border: 1px solid var(--glass-border-outer);
           box-shadow: var(--glass-specular), var(--glass-shadow-float);
+        }
+      }
+
+      @media (min-width: 560px) and (max-height: 539px) {
+        :root[data-view='mobile'] #app-shell {
+          width: min(540px, 100%);
+          max-width: 100%;
+          height: 100%;
+          border-radius: 0;
+          border-left: 1px solid var(--glass-border-outer);
+          border-right: 1px solid var(--glass-border-outer);
+          box-shadow: var(--glass-shadow-float);
         }
       }
 
@@ -640,7 +699,13 @@
         overflow: hidden;
       }
 
-      @media (max-width: 920px) {
+      @media (max-width: 1024px) {
+        :root[data-view='desktop'] #app-shell {
+          grid-template-columns: 224px minmax(0, 1fr);
+        }
+      }
+
+      @media (max-width: 739px) {
         :root[data-view='desktop'] #app-shell {
           grid-template-columns: 1fr;
           grid-template-rows: auto minmax(0, 1fr);
@@ -658,7 +723,7 @@
         height: 46px;
         padding: 0 10px;
         display: grid;
-        grid-template-columns: 38px minmax(0, 1fr) 38px;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
         align-items: center;
         gap: 6px;
         background-color: var(--glass-surface-high);
@@ -674,11 +739,19 @@
       }
 
       .mobile-header-left {
-        width: 38px;
+        min-width: 0;
         height: 38px;
         display: flex;
         align-items: center;
         justify-content: flex-start;
+        gap: 4px;
+      }
+
+      .mobile-header-left #mobile-auth-btn {
+        max-width: 112px;
+        height: 32px;
+        padding: 0 9px;
+        font-size: 11.5px;
       }
 
       .mobile-page-title {
@@ -762,6 +835,37 @@
 
       :root[data-view='desktop'] .md-nav-bar {
         display: none;
+      }
+
+      @media (max-height: 500px) {
+        :root[data-view='mobile'] .md-top-app-bar {
+          height: 42px;
+        }
+        :root[data-view='mobile'] .md-nav-bar {
+          bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+          height: 44px;
+          padding: 3px 5px;
+        }
+        :root[data-view='mobile'] .md-nav-dest {
+          height: 36px;
+        }
+      }
+
+      @media (max-width: 380px) {
+        .md-nav-dest {
+          min-width: 30px;
+          height: 36px;
+          padding: 0 5px;
+        }
+        .md-nav-dest.active {
+          padding: 0 9px;
+          gap: 3px;
+        }
+      }
+
+      .md-nav-dest.is-settings-open {
+        background-color: var(--md-secondary-container);
+        color: var(--md-on-secondary-container);
       }
 
       .md-nav-dest {
@@ -892,12 +996,26 @@
         overflow: hidden;
       }
 
-      @media (max-width: 920px) {
+      @media (max-height: 620px) {
+        :root[data-view='desktop'] .md-nav-drawer {
+          overflow-y: auto;
+        }
+        :root[data-view='desktop'] .drawer-section-scroll {
+          flex: none;
+          overflow: visible;
+        }
+        :root[data-view='desktop'] .drawer-payout-list {
+          max-height: 180px;
+        }
+      }
+
+      @media (max-width: 739px) {
         :root[data-view='desktop'] .md-nav-drawer {
           height: auto;
+          max-height: 36dvh;
           border-right: none;
           border-bottom: 1px solid var(--glass-border-outer);
-          overflow: visible;
+          overflow-y: auto;
         }
       }
 
@@ -941,11 +1059,31 @@
         gap: 2px;
       }
 
-      @media (max-width: 920px) {
+      @media (max-width: 739px) {
+        [data-view='desktop'] .drawer-section {
+          padding: 6px 10px 8px;
+        }
+        [data-view='desktop'] .drawer-section:first-child {
+          padding-top: 8px;
+        }
+        [data-view='desktop'] .drawer-section + .drawer-section {
+          padding-top: 8px;
+        }
+        [data-view='desktop'] .drawer-section-header {
+          padding: 2px 6px 6px;
+        }
         [data-view='desktop'] .drawer-nav-list {
           flex-direction: row;
-          flex-wrap: wrap;
+          flex-wrap: nowrap;
+          overflow-x: auto;
           gap: 6px;
+          padding-bottom: 2px;
+        }
+        [data-view='desktop'] .md-drawer-item {
+          min-height: 36px;
+          padding: 0 12px;
+          font-size: 13px;
+          flex-shrink: 0;
         }
       }
 
@@ -994,7 +1132,7 @@
         padding-right: 4px;
       }
 
-      @media (max-width: 920px) {
+      @media (max-width: 739px) {
         :root[data-view='desktop'] .drawer-section-scroll {
           flex: none;
           overflow: visible;
@@ -1021,9 +1159,10 @@
           border-color var(--md-dur-short) var(--md-ease-standard);
       }
 
-      @media (max-width: 920px) {
+      @media (max-width: 739px) {
         :root[data-view='desktop'] .drawer-payout-btn {
-          min-width: 190px;
+          min-width: 176px;
+          padding: 8px 10px;
           border: 1px solid var(--md-outline-variant);
         }
       }
@@ -1128,10 +1267,16 @@
         gap: 8px;
       }
 
-      @media (max-width: 920px) {
+      @media (max-width: 739px) {
         :root[data-view='desktop'] .drawer-footer {
           flex-direction: row;
           flex-wrap: wrap;
+          padding: 8px 10px;
+          gap: 6px;
+        }
+        :root[data-view='desktop'] .drawer-footer .md-btn-full {
+          width: auto;
+          flex: 1 1 auto;
         }
         :root[data-view='desktop'] .drawer-footer-grid {
           flex: 1;
@@ -1158,9 +1303,11 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 16px;
-        height: 60px;
-        padding: 0 28px;
+        flex-wrap: wrap;
+        gap: 10px 14px;
+        min-height: 60px;
+        height: auto;
+        padding: 10px 24px;
         background-color: var(--glass-surface-low);
         -webkit-backdrop-filter: blur(18px) saturate(140%);
         backdrop-filter: blur(18px) saturate(140%);
@@ -1169,9 +1316,9 @@
         z-index: 25;
       }
 
-      @media (max-width: 720px) {
+      @media (max-width: 1024px) {
         :root[data-view='desktop'] .desktop-app-bar {
-          padding: 0 16px;
+          padding: 8px 16px;
           gap: 8px;
         }
       }
@@ -1179,8 +1326,9 @@
       .desktop-bar-left {
         display: flex;
         align-items: baseline;
-        gap: 12px;
+        gap: 10px;
         min-width: 0;
+        flex: 1 1 160px;
       }
 
       .desktop-page-title {
@@ -1200,8 +1348,10 @@
       .desktop-bar-actions {
         display: flex;
         align-items: center;
+        justify-content: flex-end;
+        flex-wrap: wrap;
         gap: 8px;
-        flex-shrink: 0;
+        max-width: 100%;
       }
 
       /* Content Viewport — Scrollbars live inside mobile/desktop card bounds */
@@ -1210,6 +1360,7 @@
         min-height: 0;
         width: 100%;
         overflow-y: auto;
+        overflow-x: hidden;
         overscroll-behavior: contain;
       }
 
@@ -1236,9 +1387,9 @@
         }
       }
 
-      @media (max-width: 720px) {
+      @media (max-width: 1024px) {
         :root[data-view='desktop'] .content-viewport {
-          padding: 16px 14px 24px;
+          padding: 16px 16px 24px;
         }
       }
 
@@ -2756,7 +2907,7 @@
         flex-shrink: 0;
       }
 
-      @media (max-width: 820px) {
+      @media (max-width: 1060px) {
         :root[data-view='desktop'] .desktop-kpi-strip {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
@@ -2773,6 +2924,7 @@
         display: flex;
         flex-direction: column;
         gap: 4px;
+        min-width: 0;
       }
 
       .md-kpi-card-primary {
@@ -2801,10 +2953,11 @@
 
       .kpi-value {
         font-family: var(--md-font-brand);
-        font-size: 1.42rem;
+        font-size: clamp(1.14rem, 1.55vw, 1.42rem);
         font-weight: 600;
         color: var(--md-on-surface);
         line-height: 1.18;
+        overflow-wrap: anywhere;
       }
 
       .md-kpi-card-primary .kpi-value {
@@ -6120,12 +6273,6 @@
               </svg>
               <span class="notif-bell-badge hidden" id="mobile-notif-badge">0</span>
             </button>
-            <button type="button" class="md-icon-btn" id="mobile-settings-btn" aria-label="Settings and data" title="Settings &amp; Data">
-              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-              </svg>
-            </button>
           </div>
         </header>
 
@@ -6441,6 +6588,18 @@
           _suppressClickUntil: 0,
         };
 
+        function getCurrentViewMode() {
+          return typeof window !== 'undefined' && typeof window.__resolveTalaViewMode === 'function'
+            ? window.__resolveTalaViewMode()
+            : 'mobile';
+        }
+
+        function isMobileView() {
+          return getCurrentViewMode() === 'mobile';
+        }
+
+        uiState.currentViewMode = getCurrentViewMode();
+
         var state = loadState();
 
         /* =====================================================================
@@ -6452,7 +6611,6 @@
             preferences: {
               theme: 'light', // 'light' | 'dark' | 'amoled'
               accent: 'blue', // 'blue' | 'emerald' | 'indigo' | 'teal' | 'terracotta' | 'rose'
-              viewMode: 'mobile',
               activeTab: 'salary',
               payoutSort: 'desc', // 'desc' | 'asc'
             },
@@ -6511,9 +6669,6 @@
             }
             if (VALID_ACCENT_IDS.indexOf(data.preferences.accent) !== -1) {
               base.preferences.accent = data.preferences.accent;
-            }
-            if (data.preferences.viewMode === 'desktop' || data.preferences.viewMode === 'mobile') {
-              base.preferences.viewMode = data.preferences.viewMode;
             }
             if (['salary', 'bills', 'receivables', 'payables', 'remittances', 'savings'].indexOf(data.preferences.activeTab) !== -1) {
               base.preferences.activeTab = data.preferences.activeTab;
@@ -7942,14 +8097,12 @@
         function resetAllData() {
           var preservedTheme = state.preferences.theme;
           var preservedAccent = state.preferences.accent;
-          var preservedView = state.preferences.viewMode;
           try {
             localStorage.removeItem(STORAGE_KEY);
           } catch (e) {}
           state = createDefaultState();
           state.preferences.theme = preservedTheme;
           state.preferences.accent = preservedAccent;
-          state.preferences.viewMode = preservedView;
           uiState.filterStatus = 'all';
           uiState.selectedDeductionId = null;
           uiState.mobileSheetDeductionId = null;
@@ -8681,7 +8834,7 @@
             // Propagate to all existing FUTURE payouts (never past payouts)
             futureCount = propagateTemplateToFuturePayouts(tplRef, active, false);
 
-            if (state.preferences.viewMode === 'desktop') {
+            if (!isMobileView()) {
               uiState.selectedDeductionId = newRecDed.id;
             }
           } else {
@@ -8703,7 +8856,7 @@
               attachment: cleanAttachment,
             };
             active.deductions.push(newOnceDed);
-            if (state.preferences.viewMode === 'desktop') {
+            if (!isMobileView()) {
               uiState.selectedDeductionId = newOnceDed.id;
             }
           }
@@ -9550,7 +9703,7 @@
           };
           acc.transactions.push(tx);
           sortSavingsTransactions(acc.transactions);
-          if (state.preferences.viewMode === 'desktop') {
+          if (!isMobileView()) {
             uiState.selectedSavingsTxId = tx.id;
           }
           uiState.activeModal = null;
@@ -9585,7 +9738,7 @@
           tx.date = date || todayISO();
           sortSavingsTransactions(acc.transactions);
           uiState.confirmDeleteSavingsTxId = null;
-          if (state.preferences.viewMode === 'mobile') {
+          if (isMobileView()) {
             uiState.mobileSheetSavingsTxId = null;
           }
           saveState();
@@ -9920,7 +10073,7 @@
             uiState.selectedPayablePaymentId = null;
             uiState.mobileSheetPayablePaymentId = null;
             uiState.selectedCompletedPayableId = pb.id;
-          } else if (state.preferences.viewMode === 'desktop') {
+          } else if (!isMobileView()) {
             uiState.selectedPayablePaymentId = pm.id;
           }
           saveState();
@@ -9948,7 +10101,7 @@
           sortDatedRecordsDesc(pb.payments);
           var statusChange = syncPayableCompletion(pb);
           uiState.confirmDeletePayablePaymentId = null;
-          if (state.preferences.viewMode === 'mobile') {
+          if (isMobileView()) {
             uiState.mobileSheetPayablePaymentId = null;
           }
           if (statusChange === 'completed') {
@@ -10223,8 +10376,8 @@
             uiState.receivablesViewMode = 'active';
             if (uiState.selectedCompletedReceivableId === rc.id) uiState.selectedCompletedReceivableId = null;
             if (uiState.mobileSheetCompletedReceivableId === rc.id) uiState.mobileSheetCompletedReceivableId = null;
-            if (state.preferences.viewMode === 'desktop') uiState.selectedReceivableEntryId = entry.id;
-          } else if (state.preferences.viewMode === 'desktop') {
+            if (!isMobileView()) uiState.selectedReceivableEntryId = entry.id;
+          } else if (!isMobileView()) {
             uiState.selectedReceivableEntryId = entry.id;
           }
           saveState();
@@ -10258,7 +10411,7 @@
           sortDatedRecordsDesc(rc.entries);
           var statusChange = syncReceivableCompletion(rc);
           uiState.confirmDeleteReceivableEntryId = null;
-          if (state.preferences.viewMode === 'mobile') {
+          if (isMobileView()) {
             uiState.mobileSheetReceivableEntryId = null;
           }
           if (statusChange === 'completed') {
@@ -10612,7 +10765,7 @@
           bank.remittances.push(dep);
           sortDatedRecordsDesc(bank.remittances);
           uiState.activeModal = null;
-          if (state.preferences.viewMode === 'desktop') {
+          if (!isMobileView()) {
             uiState.selectedRemittanceEntryKind = 'remittance';
             uiState.selectedRemittanceEntryId = dep.id;
           }
@@ -10641,7 +10794,7 @@
           }
           sortDatedRecordsDesc(bank.remittances);
           uiState.confirmDeleteRemittanceEntryId = null;
-          if (state.preferences.viewMode === 'mobile') {
+          if (isMobileView()) {
             uiState.mobileSheetRemittanceEntryKind = null;
             uiState.mobileSheetRemittanceEntryId = null;
           }
@@ -10670,7 +10823,7 @@
           bank.withdrawals.push(wd);
           sortDatedRecordsDesc(bank.withdrawals);
           uiState.activeModal = null;
-          if (state.preferences.viewMode === 'desktop') {
+          if (!isMobileView()) {
             uiState.selectedRemittanceEntryKind = 'withdrawal';
             uiState.selectedRemittanceEntryId = wd.id;
           }
@@ -10700,7 +10853,7 @@
           }
           sortDatedRecordsDesc(bank.withdrawals);
           uiState.confirmDeleteRemittanceEntryId = null;
-          if (state.preferences.viewMode === 'mobile') {
+          if (isMobileView()) {
             uiState.mobileSheetRemittanceEntryKind = null;
             uiState.mobileSheetRemittanceEntryId = null;
           }
@@ -11279,7 +11432,7 @@
             createdAt: Date.now(),
           };
           state.bills.push(bill);
-          if (state.preferences.viewMode === 'desktop') {
+          if (!isMobileView()) {
             uiState.selectedBillId = bill.id;
           }
           uiState.billsSubPage = 'bills';
@@ -12144,7 +12297,9 @@
         function applyThemeAndViewAttributes() {
           document.documentElement.setAttribute('data-theme', state.preferences.theme);
           document.documentElement.setAttribute('data-accent', state.preferences.accent || 'blue');
-          document.documentElement.setAttribute('data-view', state.preferences.viewMode);
+          var resolvedView = getCurrentViewMode();
+          uiState.currentViewMode = resolvedView;
+          document.documentElement.setAttribute('data-view', resolvedView);
           var themeMeta = document.querySelector('meta[name="theme-color"]');
           if (themeMeta) {
             var nextThemeColor =
@@ -12344,7 +12499,7 @@
           uiState._lastBillAlertCount = billAlertCount;
 
           if (mobNav) {
-            mobNav.innerHTML = CATEGORIES.map(function (cat) {
+            var navBtnsHtml = CATEGORIES.map(function (cat) {
               var isActive = cat.id === activeTab;
               var badge =
                 cat.id === 'bills' && billAlertCount > 0
@@ -12370,6 +12525,17 @@
                 '</button>'
               );
             }).join('');
+            navBtnsHtml +=
+              '<button type="button" class="md-nav-dest' +
+              (uiState.activeModal === 'settings' ? ' is-settings-open' : '') +
+              '" id="mobile-settings-btn" data-action="open-settings" aria-label="Settings and data" title="Settings &amp; Data">' +
+              '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">' +
+              '<circle cx="12" cy="12" r="3"></circle>' +
+              '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>' +
+              '</svg>' +
+              '<span class="md-nav-label">Settings</span>' +
+              '</button>';
+            mobNav.innerHTML = navBtnsHtml;
           }
 
           // M3 Desktop Navigation Drawer
@@ -14337,7 +14503,7 @@
           html += '<div style="display:flex;flex-direction:column;gap:2px;">';
           html += '<h2 class="section-heading">Deductions</h2>';
           html += '</div>';
-          if (state.preferences.viewMode === 'mobile') {
+          if (isMobileView()) {
             html += '<div class="section-head-actions">';
             html +=
               '<button type="button" class="md-btn md-btn-tonal md-btn-sm" data-action="open-recurring">Recurring (' +
@@ -14901,7 +15067,7 @@
           html += '<div style="display:flex;flex-direction:column;gap:2px;">';
           html += '<h2 class="section-heading">Transactions</h2>';
           html += '</div>';
-          if (state.preferences.viewMode === 'mobile') {
+          if (isMobileView()) {
             html += '<div class="section-head-actions">';
             html +=
               '<button type="button" class="md-btn md-btn-filled md-btn-sm" data-action="open-new-savings-tx">+ Add</button>';
@@ -15447,7 +15613,7 @@
               '">Change</button></div>';
           }
 
-          if (state.preferences.viewMode === 'mobile') {
+          if (isMobileView()) {
             html +=
               '<div class="single-cta-row">' +
               '<button type="button" class="md-btn md-btn-filled md-btn-full" data-action="open-new-payable-payment">+ Log Payment</button>' +
@@ -16196,7 +16362,7 @@
             '%</strong></span>';
           html += '</div>';
 
-          if (state.preferences.viewMode === 'mobile') {
+          if (isMobileView()) {
             html += '<div class="dual-cta-row">';
             html +=
               '<button type="button" class="md-btn md-btn-tonal" data-action="open-new-receivable-debt">+ Add Item</button>';
@@ -16947,7 +17113,7 @@
             '</strong></span>';
           html += '</div>';
 
-          if (state.preferences.viewMode === 'mobile') {
+          if (isMobileView()) {
             html += '<div class="dual-cta-row">';
             html +=
               '<button type="button" class="md-btn md-btn-tonal" data-action="open-new-remittance-deposit">+ Remittance Made</button>';
@@ -18112,7 +18278,7 @@
           }
 
           var html = '';
-          if (state.preferences.viewMode === 'mobile') {
+          if (isMobileView()) {
             html += renderBillsModeBarHTML();
           }
 
@@ -18144,7 +18310,7 @@
             escapeHTML(formatPHP(Math.max(0, totalLimit - totalCardBalance))) +
             '</strong></span>';
           html += '</div>';
-          if (state.preferences.viewMode === 'mobile') {
+          if (isMobileView()) {
             html += '<div class="dual-cta-row">';
             html +=
               '<button type="button" class="md-btn md-btn-tonal" data-action="set-bills-subpage" data-subpage="bills">← Back to Bills</button>';
@@ -18549,7 +18715,7 @@
           }
 
           var html = '';
-          if (state.preferences.viewMode === 'mobile') {
+          if (isMobileView()) {
             html += renderBillsModeBarHTML();
           }
 
@@ -18608,7 +18774,7 @@
               '</strong></span>';
           }
           html += '</div>';
-          if (state.preferences.viewMode === 'mobile') {
+          if (isMobileView()) {
             html += '<div class="dual-cta-row">';
             html +=
               '<button type="button" class="md-btn md-btn-tonal" data-action="set-bills-subpage" data-subpage="cards">Credit Cards (' +
@@ -18708,8 +18874,6 @@
           html += '<div style="display:flex;flex-direction:column;gap:2px;">';
           html += '<h2 class="section-heading">Recurring Bills</h2>';
           html += '</div>';
-          html +=
-            '<span class="section-helper">Select any bill from Salary → Add Deduction when paying</span>';
           html += '</div>';
 
           if (allList.length > 0) {
@@ -18930,9 +19094,13 @@
 
         function renderOverlays() {
           renderLightboxOverlay();
+          var mobSettingsNavBtn = document.getElementById('mobile-settings-btn');
+          if (mobSettingsNavBtn) {
+            mobSettingsNavBtn.classList.toggle('is-settings-open', uiState.activeModal === 'settings');
+          }
           var host = document.getElementById('overlay-host');
           if (!host) return;
-          var isMobile = state.preferences.viewMode === 'mobile';
+          var isMobile = isMobileView();
           var viewTag = isMobile ? 'm' : 'd';
 
           if (uiState.calendarModal) {
@@ -20278,7 +20446,6 @@
 
           if (uiState.activeModal === 'settings') {
             var curTheme = state.preferences.theme;
-            var curView = state.preferences.viewMode;
             var curAccent = state.preferences.accent || 'blue';
             var cloudSt = getCloudSyncStatusSafe();
 
@@ -20467,16 +20634,6 @@
                 '<button type="button" class="md-seg-btn' +
                 (curTheme === 'amoled' ? ' active' : '') +
                 '" data-action="set-theme" data-theme-val="amoled">AMOLED</button>' +
-                '</div>' +
-
-                '<h3 class="settings-section-title" style="margin-top: 14px;">Layout View</h3>' +
-                '<div class="md-segmented md-segmented-full" role="radiogroup" aria-label="Layout view mode">' +
-                '<button type="button" class="md-seg-btn' +
-                (curView === 'mobile' ? ' active' : '') +
-                '" data-action="set-view-mode" data-view-val="mobile">Mobile Portrait</button>' +
-                '<button type="button" class="md-seg-btn' +
-                (curView === 'desktop' ? ' active' : '') +
-                '" data-action="set-view-mode" data-view-val="desktop">Desktop View</button>' +
                 '</div>' +
 
                 '<h3 class="settings-section-title" style="margin-top: 14px; margin-bottom: 0;">Theme Color</h3>' +
@@ -21161,10 +21318,6 @@
           for (var i = 0; i < themeBtns.length; i++) {
             themeBtns[i].classList.toggle('active', themeBtns[i].getAttribute('data-theme-val') === state.preferences.theme);
           }
-          var viewBtns = document.querySelectorAll('[data-action="set-view-mode"]');
-          for (var v = 0; v < viewBtns.length; v++) {
-            viewBtns[v].classList.toggle('active', viewBtns[v].getAttribute('data-view-val') === state.preferences.viewMode);
-          }
           var accentBtns = document.querySelectorAll('[data-action="set-accent"]');
           var curAccent = state.preferences.accent || 'blue';
           for (var j = 0; j < accentBtns.length; j++) {
@@ -21740,67 +21893,6 @@
             return;
           }
 
-          if (action === 'set-view-mode') {
-            var chosenView = target.getAttribute('data-view-val');
-            if ((chosenView === 'mobile' || chosenView === 'desktop') && chosenView !== state.preferences.viewMode) {
-              state.preferences.viewMode = chosenView;
-              uiState.mobilePayoutSheetOpen = false;
-              uiState.mobileAccountSheetOpen = false;
-              uiState.mobilePayableSheetOpen = false;
-              uiState.mobileReceivableSheetOpen = false;
-              uiState.mobileRemittanceSheetOpen = false;
-              if (chosenView === 'desktop') {
-                if (uiState.mobileSheetDeductionId) {
-                  uiState.selectedDeductionId = uiState.mobileSheetDeductionId;
-                  uiState.mobileSheetDeductionId = null;
-                }
-                if (uiState.mobileSheetSavingsTxId) {
-                  uiState.selectedSavingsTxId = uiState.mobileSheetSavingsTxId;
-                  uiState.mobileSheetSavingsTxId = null;
-                }
-                if (uiState.mobileSheetPayablePaymentId) {
-                  uiState.selectedPayablePaymentId = uiState.mobileSheetPayablePaymentId;
-                  uiState.mobileSheetPayablePaymentId = null;
-                }
-                if (uiState.mobileSheetCompletedPayableId) {
-                  uiState.selectedCompletedPayableId = uiState.mobileSheetCompletedPayableId;
-                  uiState.mobileSheetCompletedPayableId = null;
-                }
-                if (uiState.mobileSheetReceivableEntryId) {
-                  uiState.selectedReceivableEntryId = uiState.mobileSheetReceivableEntryId;
-                  uiState.mobileSheetReceivableEntryId = null;
-                }
-                if (uiState.mobileSheetCompletedReceivableId) {
-                  uiState.selectedCompletedReceivableId = uiState.mobileSheetCompletedReceivableId;
-                  uiState.mobileSheetCompletedReceivableId = null;
-                }
-                if (uiState.mobileSheetRemittanceEntryId) {
-                  uiState.selectedRemittanceEntryKind = uiState.mobileSheetRemittanceEntryKind;
-                  uiState.selectedRemittanceEntryId = uiState.mobileSheetRemittanceEntryId;
-                  uiState.mobileSheetRemittanceEntryKind = null;
-                  uiState.mobileSheetRemittanceEntryId = null;
-                }
-                if (uiState.mobileSheetBillId) {
-                  uiState.selectedBillId = uiState.mobileSheetBillId;
-                  uiState.mobileSheetBillId = null;
-                }
-              } else {
-                uiState.mobileSheetDeductionId = null;
-                uiState.mobileSheetSavingsTxId = null;
-                uiState.mobileSheetPayablePaymentId = null;
-                uiState.mobileSheetCompletedPayableId = null;
-                uiState.mobileSheetReceivableEntryId = null;
-                uiState.mobileSheetCompletedReceivableId = null;
-                uiState.mobileSheetRemittanceEntryKind = null;
-                uiState.mobileSheetRemittanceEntryId = null;
-                uiState.mobileSheetBillId = null;
-              }
-              saveState();
-              renderAll();
-            }
-            return;
-          }
-
           if (action === 'set-accent') {
             var chosenAccent = target.getAttribute('data-accent-val');
             if (VALID_ACCENT_IDS.indexOf(chosenAccent) !== -1) {
@@ -22107,7 +22199,7 @@
             if (!dedId) return;
             uiState.showEditDetails = false;
             uiState.confirmDeleteDeductionId = null;
-            if (state.preferences.viewMode === 'mobile') {
+            if (isMobileView()) {
               uiState.mobileSheetDeductionId = dedId;
               renderOverlays();
             } else {
@@ -22158,21 +22250,21 @@
 
           if (action === 'toggle-edit-details') {
             uiState.showEditDetails = !uiState.showEditDetails;
-            if (state.preferences.viewMode === 'mobile') renderOverlays();
+            if (isMobileView()) renderOverlays();
             else renderMainContent();
             return;
           }
 
           if (action === 'ask-delete-deduction') {
             uiState.confirmDeleteDeductionId = target.getAttribute('data-id');
-            if (state.preferences.viewMode === 'mobile') renderOverlays();
+            if (isMobileView()) renderOverlays();
             else renderMainContent();
             return;
           }
 
           if (action === 'cancel-delete-deduction') {
             uiState.confirmDeleteDeductionId = null;
-            if (state.preferences.viewMode === 'mobile') renderOverlays();
+            if (isMobileView()) renderOverlays();
             else renderMainContent();
             return;
           }
@@ -22513,7 +22605,7 @@
             var txId = target.getAttribute('data-id');
             if (!txId) return;
             uiState.confirmDeleteSavingsTxId = null;
-            if (state.preferences.viewMode === 'mobile') {
+            if (isMobileView()) {
               uiState.mobileSheetSavingsTxId = txId;
               renderOverlays();
             } else {
@@ -22544,14 +22636,14 @@
 
           if (action === 'ask-delete-savings-tx') {
             uiState.confirmDeleteSavingsTxId = target.getAttribute('data-id');
-            if (state.preferences.viewMode === 'mobile') renderOverlays();
+            if (isMobileView()) renderOverlays();
             else renderMainContent();
             return;
           }
 
           if (action === 'cancel-delete-savings-tx') {
             uiState.confirmDeleteSavingsTxId = null;
-            if (state.preferences.viewMode === 'mobile') renderOverlays();
+            if (isMobileView()) renderOverlays();
             else renderMainContent();
             return;
           }
@@ -22665,7 +22757,7 @@
             var pmId = target.getAttribute('data-id');
             if (!pmId) return;
             uiState.confirmDeletePayablePaymentId = null;
-            if (state.preferences.viewMode === 'mobile') {
+            if (isMobileView()) {
               uiState.mobileSheetPayablePaymentId = pmId;
               renderOverlays();
             } else {
@@ -22688,14 +22780,14 @@
 
           if (action === 'ask-delete-payable-payment') {
             uiState.confirmDeletePayablePaymentId = target.getAttribute('data-id');
-            if (state.preferences.viewMode === 'mobile') renderOverlays();
+            if (isMobileView()) renderOverlays();
             else renderMainContent();
             return;
           }
 
           if (action === 'cancel-delete-payable-payment') {
             uiState.confirmDeletePayablePaymentId = null;
-            if (state.preferences.viewMode === 'mobile') renderOverlays();
+            if (isMobileView()) renderOverlays();
             else renderMainContent();
             return;
           }
@@ -22713,7 +22805,7 @@
             if (!donePbId) return;
             uiState.confirmDeletePayableId = null;
             uiState.selectedCompletedPayableId = donePbId;
-            if (state.preferences.viewMode === 'mobile') {
+            if (isMobileView()) {
               uiState.mobileSheetCompletedPayableId = donePbId;
               renderOverlays();
             } else {
@@ -22827,7 +22919,7 @@
             var enId = target.getAttribute('data-id');
             if (!enId) return;
             uiState.confirmDeleteReceivableEntryId = null;
-            if (state.preferences.viewMode === 'mobile') {
+            if (isMobileView()) {
               uiState.mobileSheetReceivableEntryId = enId;
               renderOverlays();
             } else {
@@ -22870,14 +22962,14 @@
 
           if (action === 'ask-delete-receivable-entry') {
             uiState.confirmDeleteReceivableEntryId = target.getAttribute('data-id');
-            if (state.preferences.viewMode === 'mobile') renderOverlays();
+            if (isMobileView()) renderOverlays();
             else renderMainContent();
             return;
           }
 
           if (action === 'cancel-delete-receivable-entry') {
             uiState.confirmDeleteReceivableEntryId = null;
-            if (state.preferences.viewMode === 'mobile') renderOverlays();
+            if (isMobileView()) renderOverlays();
             else renderMainContent();
             return;
           }
@@ -22895,7 +22987,7 @@
             if (!doneRcId) return;
             uiState.confirmDeleteReceivableId = null;
             uiState.selectedCompletedReceivableId = doneRcId;
-            if (state.preferences.viewMode === 'mobile') {
+            if (isMobileView()) {
               uiState.mobileSheetCompletedReceivableId = doneRcId;
               renderOverlays();
             } else {
@@ -22988,7 +23080,7 @@
             var remEnKind = target.getAttribute('data-kind');
             if (!remEnId || !remEnKind) return;
             uiState.confirmDeleteRemittanceEntryId = null;
-            if (state.preferences.viewMode === 'mobile') {
+            if (isMobileView()) {
               uiState.mobileSheetRemittanceEntryKind = remEnKind;
               uiState.mobileSheetRemittanceEntryId = remEnId;
               renderOverlays();
@@ -23036,14 +23128,14 @@
 
           if (action === 'ask-delete-remittance-entry') {
             uiState.confirmDeleteRemittanceEntryId = target.getAttribute('data-id');
-            if (state.preferences.viewMode === 'mobile') renderOverlays();
+            if (isMobileView()) renderOverlays();
             else renderMainContent();
             return;
           }
 
           if (action === 'cancel-delete-remittance-entry') {
             uiState.confirmDeleteRemittanceEntryId = null;
-            if (state.preferences.viewMode === 'mobile') renderOverlays();
+            if (isMobileView()) renderOverlays();
             else renderMainContent();
             return;
           }
@@ -23089,14 +23181,14 @@
               state.preferences.activeTab = 'payables';
               uiState.payablesViewMode = 'completed';
               uiState.selectedCompletedPayableId = archId;
-              if (state.preferences.viewMode === 'mobile') {
+              if (isMobileView()) {
                 uiState.mobileSheetCompletedPayableId = archId;
               }
             } else if (archKind === 'receivable' && archId) {
               state.preferences.activeTab = 'receivables';
               uiState.receivablesViewMode = 'completed';
               uiState.selectedCompletedReceivableId = archId;
-              if (state.preferences.viewMode === 'mobile') {
+              if (isMobileView()) {
                 uiState.mobileSheetCompletedReceivableId = archId;
               }
             }
@@ -23209,7 +23301,7 @@
             uiState.billsSubPage = 'bills';
             uiState.confirmDeleteBillId = null;
             uiState.confirmDeleteBillHistoryId = null;
-            if (state.preferences.viewMode === 'mobile') {
+            if (isMobileView()) {
               uiState.mobileSheetBillId = openBillId;
               renderMainContent();
               renderOverlays();
@@ -23259,14 +23351,14 @@
 
           if (action === 'ask-delete-bill') {
             uiState.confirmDeleteBillId = target.getAttribute('data-id');
-            if (state.preferences.viewMode === 'mobile') renderOverlays();
+            if (isMobileView()) renderOverlays();
             else renderMainContent();
             return;
           }
 
           if (action === 'cancel-delete-bill') {
             uiState.confirmDeleteBillId = null;
-            if (state.preferences.viewMode === 'mobile') renderOverlays();
+            if (isMobileView()) renderOverlays();
             else renderMainContent();
             return;
           }
@@ -23281,14 +23373,14 @@
           if (action === 'ask-delete-bill-history') {
             evt.stopPropagation();
             uiState.confirmDeleteBillHistoryId = target.getAttribute('data-entry-id');
-            if (state.preferences.viewMode === 'mobile') renderOverlays();
+            if (isMobileView()) renderOverlays();
             else renderMainContent();
             return;
           }
 
           if (action === 'cancel-delete-bill-history') {
             uiState.confirmDeleteBillHistoryId = null;
-            if (state.preferences.viewMode === 'mobile') renderOverlays();
+            if (isMobileView()) renderOverlays();
             else renderMainContent();
             return;
           }
@@ -23368,7 +23460,7 @@
               state.preferences.activeTab = 'bills';
               uiState.billsSubPage = 'bills';
               uiState.activeModal = null;
-              if (state.preferences.viewMode === 'mobile') {
+              if (isMobileView()) {
                 uiState.mobileSheetBillId = obBillId;
               } else {
                 uiState.selectedBillId = obBillId;
@@ -25093,9 +25185,79 @@
           });
         }
 
+        function syncViewportLayout() {
+          var nextView = getCurrentViewMode();
+          if (nextView === uiState.currentViewMode) return;
+          uiState.currentViewMode = nextView;
+          uiState.mobilePayoutSheetOpen = false;
+          uiState.mobileAccountSheetOpen = false;
+          uiState.mobilePayableSheetOpen = false;
+          uiState.mobileReceivableSheetOpen = false;
+          uiState.mobileRemittanceSheetOpen = false;
+          if (nextView === 'desktop') {
+            if (uiState.mobileSheetDeductionId) {
+              uiState.selectedDeductionId = uiState.mobileSheetDeductionId;
+              uiState.mobileSheetDeductionId = null;
+            }
+            if (uiState.mobileSheetSavingsTxId) {
+              uiState.selectedSavingsTxId = uiState.mobileSheetSavingsTxId;
+              uiState.mobileSheetSavingsTxId = null;
+            }
+            if (uiState.mobileSheetPayablePaymentId) {
+              uiState.selectedPayablePaymentId = uiState.mobileSheetPayablePaymentId;
+              uiState.mobileSheetPayablePaymentId = null;
+            }
+            if (uiState.mobileSheetCompletedPayableId) {
+              uiState.selectedCompletedPayableId = uiState.mobileSheetCompletedPayableId;
+              uiState.mobileSheetCompletedPayableId = null;
+            }
+            if (uiState.mobileSheetReceivableEntryId) {
+              uiState.selectedReceivableEntryId = uiState.mobileSheetReceivableEntryId;
+              uiState.mobileSheetReceivableEntryId = null;
+            }
+            if (uiState.mobileSheetCompletedReceivableId) {
+              uiState.selectedCompletedReceivableId = uiState.mobileSheetCompletedReceivableId;
+              uiState.mobileSheetCompletedReceivableId = null;
+            }
+            if (uiState.mobileSheetRemittanceEntryId) {
+              uiState.selectedRemittanceEntryKind = uiState.mobileSheetRemittanceEntryKind;
+              uiState.selectedRemittanceEntryId = uiState.mobileSheetRemittanceEntryId;
+              uiState.mobileSheetRemittanceEntryKind = null;
+              uiState.mobileSheetRemittanceEntryId = null;
+            }
+            if (uiState.mobileSheetBillId) {
+              uiState.selectedBillId = uiState.mobileSheetBillId;
+              uiState.mobileSheetBillId = null;
+            }
+          } else {
+            uiState.mobileSheetDeductionId = null;
+            uiState.mobileSheetSavingsTxId = null;
+            uiState.mobileSheetPayablePaymentId = null;
+            uiState.mobileSheetCompletedPayableId = null;
+            uiState.mobileSheetReceivableEntryId = null;
+            uiState.mobileSheetCompletedReceivableId = null;
+            uiState.mobileSheetRemittanceEntryKind = null;
+            uiState.mobileSheetRemittanceEntryId = null;
+            uiState.mobileSheetBillId = null;
+          }
+          renderAll();
+        }
+
+        var _resizeLayoutTimer = null;
+        function scheduleViewportLayoutSync() {
+          if (_resizeLayoutTimer) clearTimeout(_resizeLayoutTimer);
+          _resizeLayoutTimer = setTimeout(function () {
+            _resizeLayoutTimer = null;
+            syncViewportLayout();
+          }, 90);
+        }
+
+        if (typeof window !== 'undefined') {
+          window.addEventListener('resize', scheduleViewportLayoutSync);
+          window.addEventListener('orientationchange', scheduleViewportLayoutSync);
+        }
+
         // Static Chrome Button Bindings
-        var mobileSettingsBtn = document.getElementById('mobile-settings-btn');
-        if (mobileSettingsBtn) mobileSettingsBtn.addEventListener('click', openSettingsModal);
         var sidebarSettingsBtn = document.getElementById('sidebar-settings-btn');
         if (sidebarSettingsBtn) sidebarSettingsBtn.addEventListener('click', openSettingsModal);
 

@@ -3,10 +3,10 @@
   "appId": "1:583153415714:web:a9c4ae7f0c199578877c7b",
   "apiKey": "AIzaSyBq1rXz6oyWh9vOFdShb2IQflpmSzjD3_s",
   "authDomain": "tala-ledger.firebaseapp.com",
-  "firestoreDatabaseId": "(default)",
+  "firestoreDatabaseId": "ai-studio-talaledger-5f678dae-37e7-4e79-a620-6e3a96bfbd47",
   "storageBucket": "tala-ledger.firebasestorage.app",
   "messagingSenderId": "583153415714",
   "measurementId": "",
-  "oAuthClientId": "65914352838-te1rursc8f8e9oo1d8u7b1efatb80v4b.apps.googleusercontent.com",
+  "oAuthClientId": "583153415714-kop6jm8fpo8cnrvn0qppkqo9s1qp86o8.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }
